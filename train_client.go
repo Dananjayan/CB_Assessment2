@@ -1,38 +1,61 @@
-import grpc
-from train_pb2 import Ticket, User
-from train_pb2_grpc import TrainServiceStub
+package main
 
-def main():
-    with grpc.insecure_channel('localhost:50051') as channel:
-        stub = TrainServiceStub(channel)
+import (
+	"context"
+	"fmt"
+	"log"
 
-        # Purchase Ticket
-        user = User(first_name="John", last_name="Doe", email="danajaya@gmail.com")
-        ticket_request = Ticket(from="London", to="France", user=user)
-        purchased_ticket = stub.PurchaseTicket(ticket_request)
-        print("Ticket purchased:", purchased_ticket)
+	"google.golang.org/grpc"
+)
 
-        # Show Receipt
-        receipt_request = User(email="danajaya@gmail.com")
-        receipt = stub.ShowReceipt(receipt_request)
-        print("Receipt:", receipt)
+func main() {
+	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
 
-        # View Users By Section
-        section_request = "A"
-        users_by_section = stub.ViewUsersBySection(section_request)
-        print(f"Users in Section {section_request}:")
-        for user_ticket in users_by_section:
-            print(user_ticket)
+	client := NewTrainServiceClient(conn)
 
-        # Remove User
-        remove_user_request = User(email="danajaya@gmail.com")
-        removed_ticket = stub.RemoveUser(remove_user_request)
-        print("Removed User's Ticket:", removed_ticket)
+	user := &User{FirstName: "John", LastName: "Doe", Email: "john.doe@example.com"}
+	purchasedTicket, err := client.PurchaseTicket(context.Background(), &Ticket{From: "London", To: "France", User: user})
+	if err != nil {
+		log.Fatalf("Error purchasing ticket: %v", err)
+	}
+	fmt.Println("Ticket purchased:", purchasedTicket)
 
-        # Modify User's Seat
-        modify_seat_request = Ticket(from="London", to="France", user=user)
-        modified_ticket = stub.ModifyUserSeat(modify_seat_request)
-        print("Modified User's Seat:", modified_ticket)
+	receipt, err := client.ShowReceipt(context.Background(), user)
+	if err != nil {
+		log.Fatalf("Error showing receipt: %v", err)
+	}
+	fmt.Println("Receipt:", receipt)
 
-if __name__ == '__main__':
-    main()
+	section := "A"
+	usersBySection, err := client.ViewUsersBySection(context.Background(), &section)
+	if err != nil {
+		log.Fatalf("Error viewing users by section: %v", err)
+	}
+	fmt.Printf("Users in Section %s:\n", section)
+	for {
+		ticket, err := usersBySection.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Error receiving user: %v", err)
+		}
+		fmt.Println(ticket)
+	}
+
+	removedTicket, err := client.RemoveUser(context.Background(), user)
+	if err != nil {
+		log.Fatalf("Error removing user: %v", err)
+	}
+	fmt.Println("Removed User's Ticket:", removedTicket)
+
+	modifiedTicket, err := client.ModifyUserSeat(context.Background(), purchasedTicket)
+	if err != nil {
+		log.Fatalf("Error modifying user's seat: %v", err)
+	}
+	fmt.Println("Modified User's Seat:", modifiedTicket)
+}
